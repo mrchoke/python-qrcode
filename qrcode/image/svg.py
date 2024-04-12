@@ -2,12 +2,11 @@ import decimal
 from decimal import Decimal
 from typing import List, Optional, Type, Union, overload
 
-from typing_extensions import Literal
-
 import qrcode.image.base
 from qrcode.compat.etree import ET
 from qrcode.image.styles.moduledrawers import svg as svg_drawers
 from qrcode.image.styles.moduledrawers.base import QRModuleDrawer
+from typing_extensions import Literal
 
 
 class SvgFragmentImage(qrcode.image.base.BaseImageWithDrawer):
@@ -29,12 +28,10 @@ class SvgFragmentImage(qrcode.image.base.BaseImageWithDrawer):
         self.unit_size = self.units(self.box_size)
 
     @overload
-    def units(self, pixels: Union[int, Decimal], text: Literal[False]) -> Decimal:
-        ...
+    def units(self, pixels: Union[int, Decimal], text: Literal[False]) -> Decimal: ...
 
     @overload
-    def units(self, pixels: Union[int, Decimal], text: Literal[True] = True) -> str:
-        ...
+    def units(self, pixels: Union[int, Decimal], text: Literal[True] = True) -> str: ...
 
     def units(self, pixels, text=True):
         """
@@ -86,6 +83,9 @@ class SvgImage(SvgFragmentImage):
     """
 
     background: Optional[str] = None
+    front_color: Optional[str] = "black"
+    back_color: Optional[str] = "white"
+
     drawer_aliases: qrcode.image.base.DrawerAliases = {
         "circle": (svg_drawers.SvgCircleDrawer, {}),
         "gapped-circle": (svg_drawers.SvgCircleDrawer, {"size_ratio": Decimal(0.8)}),
@@ -169,6 +169,21 @@ class SvgFillImage(SvgImage):
     """
 
     background = "white"
+
+    def __init__(self, *args, **kwargs) -> None:
+        if "background" in kwargs:
+            self.background = kwargs.pop("background")
+        if "front_color" in kwargs:
+            self.front_color = kwargs.pop("front_color")
+        if "back_color" in kwargs:
+            self.back_color = kwargs.pop("back_color")
+        super().__init__(*args, **kwargs)
+
+    def _svg(self, viewBox=None, **kwargs):
+        if viewBox is None:
+            dimension = self.units(self.pixel_size, text=False)
+            viewBox = "0 0 {d} {d}".format(d=dimension)
+        return super()._svg(viewBox=viewBox, **kwargs)
 
 
 class SvgPathFillImage(SvgPathImage):

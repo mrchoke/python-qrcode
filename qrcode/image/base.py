@@ -106,6 +106,32 @@ class BaseImage:
             or (self.width - row < 8 and col < 7)
         )
 
+    def is_eye_frame(self, row: int, col: int):
+        """
+        Find whether the referenced module is in the frame of an eye.
+        """
+
+        return (
+            (
+                ((row == 0 or row == 6) and (0 <= col <= 6))
+                or ((col == 0 or col == 6) and (0 <= row <= 6))
+            )
+            or ((row == 0 or row == 6) and (self.width - 7 <= col <= self.width))
+            or ((col == self.width - 7 or col == self.width - 1) and (0 <= row <= 6))
+            or ((row == self.width - 7 or row == self.width - 1) and (0 <= col <= 6))
+            or ((col == 0 or col == 6) and (self.width - 7 <= row <= self.width - 1))
+        )
+
+    def is_eye_ball(self, row: int, col: int):
+        """
+        Find whether the referenced module is in the ball of an eye.
+        """
+        return (
+            (2 <= row < 5 and 1 < col < 5)
+            or (2 <= row < 5 and 1 < (self.width - col - 1) < 5)
+            or (2 <= (self.width - row - 1) < 5 and 1 < col < 5)
+        )
+
 
 class BaseImageWithDrawer(BaseImage):
     default_drawer_class: Type[QRModuleDrawer]
@@ -121,26 +147,28 @@ class BaseImageWithDrawer(BaseImage):
 
     module_drawer: "QRModuleDrawer"
     eye_drawer: "QRModuleDrawer"
+    eye_frame_drawer: "QRModuleDrawer"
+    eye_ball_drawer: "QRModuleDrawer"
 
     def __init__(
         self,
         *args,
         module_drawer: Union[QRModuleDrawer, str, None] = None,
         eye_drawer: Union[QRModuleDrawer, str, None] = None,
+        eye_frame_drawer: Union[QRModuleDrawer, str, None] = None,
+        eye_ball_drawer: Union[QRModuleDrawer, str, None] = None,
         **kwargs,
     ):
-        self.module_drawer = (
-            self.get_drawer(module_drawer) or self.get_default_module_drawer()
-        )
+        self.module_drawer = self.get_drawer(module_drawer) or self.get_default_module_drawer()
         # The eye drawer can be overridden by another module drawer as well,
         # but you have to be more careful with these in order to make the QR
         # code still parseable
         self.eye_drawer = self.get_drawer(eye_drawer) or self.get_default_eye_drawer()
+        self.eye_frame_drawer = self.get_drawer(eye_frame_drawer) or self.get_default_eye_drawer()
+        self.eye_ball_drawer = self.get_drawer(eye_ball_drawer) or self.get_default_eye_drawer()
         super().__init__(*args, **kwargs)
 
-    def get_drawer(
-        self, drawer: Union[QRModuleDrawer, str, None]
-    ) -> Optional[QRModuleDrawer]:
+    def get_drawer(self, drawer: Union[QRModuleDrawer, str, None]) -> Optional[QRModuleDrawer]:
         if not isinstance(drawer, str):
             return drawer
         drawer_cls, kwargs = self.drawer_aliases[drawer]
@@ -149,16 +177,23 @@ class BaseImageWithDrawer(BaseImage):
     def init_new_image(self):
         self.module_drawer.initialize(img=self)
         self.eye_drawer.initialize(img=self)
+        self.eye_frame_drawer.initialize(img=self)
+        self.eye_ball_drawer.initialize(img=self)
 
         return super().init_new_image()
 
     def drawrect_context(self, row: int, col: int, qr: "QRCode"):
         box = self.pixel_box(row, col)
-        drawer = self.eye_drawer if self.is_eye(row, col) else self.module_drawer
+        drawer = self.module_drawer
         is_active: Union[bool, ActiveWithNeighbors] = (
             qr.active_with_neighbors(row, col)
             if drawer.needs_neighbors
             else bool(qr.modules[row][col])
         )
-
+        if self.is_eye_frame(row, col):
+            drawer = self.eye_frame_drawer
+            # print("eye frame: " + str(row) + " " + str(col))
+        if self.is_eye_ball(row, col):
+            drawer = self.eye_ball_drawer
+            # print("eye ball: " + str(row) + " " + str(col))
         drawer.drawrect(box, is_active)
