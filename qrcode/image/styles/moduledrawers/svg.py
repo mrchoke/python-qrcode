@@ -1,12 +1,15 @@
 import abc
 from decimal import Decimal
-from typing import TYPE_CHECKING, NamedTuple, Optional
+from typing import TYPE_CHECKING, List, NamedTuple, Optional
 
 from qrcode.compat.etree import ET
 from qrcode.image.styles.moduledrawers.base import QRModuleDrawer
+from qrcode.main import ActiveWithNeighbors
 
 if TYPE_CHECKING:
     from qrcode.image.svg import SvgFragmentImage, SvgPathImage
+
+import random
 
 ANTIALIASING_FACTOR = 4
 
@@ -200,21 +203,11 @@ class SveBlankDrawer(SvgQRModuleDrawer):
         super().initialize(*args, **kwargs)
         self.unit_size = self.img.units(self.box_size)
 
+    def drawrect(self, box, is_active: TYPE_CHECKING):
+        return
+
     def el(self, box) -> str:
-        coords = self.coords(box)
-        x0 = self.img.units(coords.x0, text=False)
-        x1 = self.img.units(coords.x1, text=False)
-        y0 = self.img.units(coords.y0, text=False)
-        y1 = self.img.units(coords.y1, text=False)
-
-        path = ET.Element(
-            ET.QName("path"),  # type: ignore
-            d=f"M{x0},{y0}L{x1},{y0}L{x1},{y1}L{x0},{y1}Z",
-            # id="qr-path",
-            fill="transparent",
-        )
-
-        return path
+        return
 
 
 class SvgDiamonDrawer(SvgQRModuleDrawer):
@@ -225,18 +218,1568 @@ class SvgDiamonDrawer(SvgQRModuleDrawer):
     def el(self, box) -> str:
         coords = self.coords(box)
         x0 = self.img.units(coords.x0, text=False)
-        xh = self.img.units(coords.xh, text=False)
         y0 = self.img.units(coords.y0, text=False)
-        y1 = self.img.units(coords.y1, text=False)
+        xh = self.img.units(coords.xh, text=False)
         yh = self.img.units(coords.yh, text=False)
-        h = self.img.units(self.box_half - self.box_delta, text=False)
+        y1 = self.img.units(coords.y1, text=False)
         x1 = self.img.units(coords.x1, text=False)
 
         path = ET.Element(
             ET.QName("path"),  # type: ignore
             d=f"M{x0},{yh}L{xh},{y0}L{x1},{yh}L{xh},{y1}Z",
-            # id="qr-path",
             fill=self.fill_color,
+        )
+        return path
+
+
+class SvgRandomSquareDrawer(SvgQRModuleDrawer):
+    def initialize(self, *args, **kwargs) -> None:
+        super().initialize(*args, **kwargs)
+        self.unit_size = self.img.units(self.box_size, text=False)
+
+    def el(self, box) -> str:
+        coords = self.coords(box)
+        x0 = self.img.units(coords.x0, text=False)
+        y0 = self.img.units(coords.y0, text=False)
+        y1 = self.img.units(coords.y1, text=False)
+        x1 = self.img.units(coords.x1, text=False)
+        yh = self.img.units(coords.yh, text=False)
+        xh = self.img.units(coords.xh, text=False)
+
+        random_rotate = random.randint(0, 360)
+
+        path = ET.Element(
+            ET.QName("polygon"),  # type: ignore
+            points=f"{x0},{yh} {xh},{y0} {x1},{yh} {xh},{y1}",
+            width=str(self.unit_size),
+            height=str(self.unit_size),
+            x=str(x0),
+            y=str(y0),
+            fill=self.fill_color,
+            transform=f"rotate({random_rotate}, {xh}, {yh})",
         )
 
         return path
+
+
+class SvgVerticalBarsDrawer(SvgQRModuleDrawer):
+    needs_neighbors = True
+
+    def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
+
+        if not is_active:
+            return
+
+        coords = self.coords(box)
+
+        h = self.img.units(self.box_half - self.box_delta, text=False)
+
+        radius = self.img.units(self.box_half, text=False)
+
+        x0 = self.img.units(coords.x0, text=False)
+        y0 = self.img.units(coords.y0, text=False)
+        xh = self.img.units(coords.xh, text=False)
+        yh = self.img.units(coords.yh, text=False)
+        x1 = self.img.units(coords.x1, text=False)
+        y1 = self.img.units(coords.y1, text=False)
+
+        top_block = not is_active.N and is_active.S
+        bottom_block = not is_active.S and is_active.N
+
+        alone = (not is_active.N and not is_active.S and not is_active.E and not is_active.W) or (
+            not is_active.N and not is_active.S
+        )
+
+        el = ET.Element(
+            ET.QName("path"),  # type: ignore
+            d=f"M{x0},{y0}H{x1}V{y1+h}H{x0}z",
+            fill=self.fill_color,
+        )
+
+        if top_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{yh}A{h},{h},0,0,1,{x1},{yh}V{y1+h}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{yh}A{h},{h},0,0,1,{x0},{yh}Z",
+                fill=self.fill_color,
+            )
+        if alone:
+            el = ET.Element(
+                ET.QName("circle"),  # type: ignore
+                cx=str(xh),
+                cy=str(yh),
+                r=str(radius),
+                fill=self.fill_color,
+            )
+
+        self.img._img.append(el)
+
+    def initialize(self, *args, **kwargs) -> None:
+        super().initialize(*args, **kwargs)
+        self.unit_size = f"{self.img.units(self.box_size, text=False)}"
+
+    def el(self, box):
+        pass
+
+
+class SvgVertical2BarsDrawer(SvgQRModuleDrawer):
+    needs_neighbors = True
+
+    def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
+
+        if not is_active:
+            return
+
+        coords = self.coords(box)
+
+        h = self.img.units(self.box_half - self.box_delta, text=False)
+
+        x0 = self.img.units(coords.x0, text=False)
+        y0 = self.img.units(coords.y0, text=False)
+        y1 = self.img.units(coords.y1, text=False)
+        x1 = self.img.units(coords.x1, text=False)
+
+        below_block = not is_active.S
+
+        alone = (not is_active.N and not is_active.S and not is_active.E and not is_active.W) or (
+            not is_active.N and not is_active.S
+        )
+
+        el = ET.Element(
+            ET.QName("path"),  # type: ignore
+            d=f"M{x0},{y0}H{x1}V{y1+h}H{x0}z",
+            fill=self.fill_color,
+        )
+
+        if below_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if alone:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        self.img._img.append(el)
+
+    def initialize(self, *args, **kwargs) -> None:
+        super().initialize(*args, **kwargs)
+        self.unit_size = f"{self.img.units(self.box_size, text=False)}"
+
+    def el(self, box):
+        pass
+
+
+class SvgHorizontalBarsDrawer(SvgQRModuleDrawer):
+    needs_neighbors = True
+
+    def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
+
+        if not is_active:
+            return
+
+        coords = self.coords(box)
+
+        h = self.img.units(self.box_half - self.box_delta, text=False)
+
+        radius = self.img.units(self.box_half, text=False)
+
+        x0 = self.img.units(coords.x0, text=False)
+        y0 = self.img.units(coords.y0, text=False)
+        xh = self.img.units(coords.xh, text=False)
+        yh = self.img.units(coords.yh, text=False)
+        y1 = self.img.units(coords.y1, text=False)
+        x1 = self.img.units(coords.x1, text=False)
+
+        left_block = not is_active.W and is_active.E
+        right_block = not is_active.E and is_active.W
+
+        alone = (not is_active.N and not is_active.S and not is_active.E and not is_active.W) or (
+            not is_active.W and not is_active.E
+        )
+
+        el = ET.Element(
+            ET.QName("path"),  # type: ignore
+            d=f"M{x0},{y0}H{x1+h}V{y1}H{x0}z",
+            fill=self.fill_color,
+        )
+
+        if left_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{xh},{y0}H{x1+h}V{y1}H{x0}A{h},{h},0,0,1,{xh},{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if right_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{xh}A{h},{h},0,0,1,{xh},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+        if alone:
+            el = ET.Element(
+                ET.QName("circle"),  # type: ignore
+                cx=str(xh),
+                cy=str(yh),
+                r=str(radius),
+                fill=self.fill_color,
+            )
+
+        self.img._img.append(el)
+
+    def initialize(self, *args, **kwargs) -> None:
+        super().initialize(*args, **kwargs)
+        self.unit_size = f"{self.img.units(self.box_size, text=False)}"
+
+    def el(self, box):
+        pass
+
+
+class SvgHorizontal2BarsDrawer(SvgQRModuleDrawer):
+    needs_neighbors = True
+
+    def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
+
+        if not is_active:
+            return
+
+        coords = self.coords(box)
+
+        h = self.img.units(self.box_half - self.box_delta, text=False)
+
+        x0 = self.img.units(coords.x0, text=False)
+        y0 = self.img.units(coords.y0, text=False)
+        y1 = self.img.units(coords.y1, text=False)
+        x1 = self.img.units(coords.x1, text=False)
+
+        right_block = not is_active.E
+
+        alone = (not is_active.N and not is_active.S and not is_active.E and not is_active.W) or (
+            not is_active.W and not is_active.E
+        )
+
+        el = ET.Element(
+            ET.QName("path"),  # type: ignore
+            d=f"M{x0},{y0}H{x1+h}V{y1}H{x0}z",
+            fill=self.fill_color,
+        )
+
+        if right_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if alone:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        self.img._img.append(el)
+
+    def initialize(self, *args, **kwargs) -> None:
+        super().initialize(*args, **kwargs)
+        self.unit_size = f"{self.img.units(self.box_size, text=False)}"
+
+    def el(self, box):
+        pass
+
+
+class SvgRoundedDrawer(SvgQRModuleDrawer):
+    needs_neighbors = True
+
+    def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
+
+        if not is_active:
+            return
+
+        coords = self.coords(box)
+
+        h = self.img.units(self.box_half, text=False) - self.box_delta
+
+        radius = self.img.units(self.box_half, text=False)
+
+        x0 = self.img.units(coords.x0, text=False)
+        y0 = self.img.units(coords.y0, text=False)
+        x1 = self.img.units(coords.x1, text=False)
+        y1 = self.img.units(coords.y1, text=False)
+        xh = self.img.units(coords.xh, text=False)
+        yh = self.img.units(coords.yh, text=False)
+
+        corner_r = self.img.units(self.box_size, text=False)
+
+        left_block = not is_active.W and is_active.E and not is_active.N and not is_active.S
+        right_block = not is_active.E and is_active.W and not is_active.N and not is_active.S
+        top_block = not is_active.N and is_active.S and not is_active.E and not is_active.W
+        bottom_block = not is_active.S and is_active.N and not is_active.E and not is_active.W
+
+        top_left_corner = not is_active.N and not is_active.W
+        top_right_corner = not is_active.N and not is_active.E
+        bottom_left_corner = not is_active.S and not is_active.W
+        bottom_right_corner = not is_active.S and not is_active.E
+
+        alone = not is_active.N and not is_active.S and not is_active.E and not is_active.W
+
+        el = ET.Element(
+            ET.QName("path"),  # type: ignore
+            d=f"M{x0},{y0}H{x1}V{y1}H{x0}z",
+            fill=self.fill_color,
+        )
+
+        if top_left_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{yh}A{corner_r},{corner_r},0,0,1{x1},{y0}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if top_right_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{xh}A{corner_r},{corner_r},0,0,1{x1},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_left_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{y1}H{xh}A{corner_r},{corner_r},0,0,1,{x0},{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_right_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{yh}A{corner_r},{corner_r},0,0,1,{xh},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if top_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{yh}A{h},{h},0,0,1,{x1},{yh}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{yh}A{h},{h},0,0,1,{x0},{yh}Z",
+                fill=self.fill_color,
+            )
+
+        if left_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{xh},{y0}H{x1}V{y1}H{xh}A{h},{h},0,0,1,{xh},{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if right_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{xh}A{h},{h},0,0,1,{xh},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if alone:
+            el = ET.Element(
+                ET.QName("circle"),  # type: ignore
+                cx=str(xh),
+                cy=str(yh),
+                r=str(radius),
+                fill=self.fill_color,
+            )
+
+        self.img._img.append(el)
+
+    def initialize(self, *args, **kwargs) -> None:
+        super().initialize(*args, **kwargs)
+        self.unit_size = f"{self.img.units(self.box_size, text=False)}"
+
+    def el(self, box):
+        pass
+
+
+class SvgRounded2Drawer(SvgQRModuleDrawer):
+    needs_neighbors = True
+
+    def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
+
+        if not is_active:
+            return
+
+        coords = self.coords(box)
+
+        h = self.img.units(self.box_half, text=False) - self.box_delta
+
+        x0 = self.img.units(coords.x0, text=False)
+        y0 = self.img.units(coords.y0, text=False)
+        x1 = self.img.units(coords.x1, text=False)
+        y1 = self.img.units(coords.y1, text=False)
+        xh = self.img.units(coords.xh, text=False)
+        yh = self.img.units(coords.yh, text=False)
+
+        corner_r = self.img.units(self.box_size, text=False)
+
+        left_block = not is_active.W and is_active.E and not is_active.N and not is_active.S
+        right_block = not is_active.E and is_active.W and not is_active.N and not is_active.S
+        top_block = not is_active.N and is_active.S and not is_active.E and not is_active.W
+        bottom_block = not is_active.S and is_active.N and not is_active.E and not is_active.W
+
+        top_left_corner = not is_active.N and not is_active.W
+        top_right_corner = not is_active.N and not is_active.E
+        bottom_left_corner = not is_active.S and not is_active.W
+        bottom_right_corner = not is_active.S and not is_active.E
+
+        alone = not is_active.N and not is_active.S and not is_active.E and not is_active.W
+
+        el = ET.Element(
+            ET.QName("path"),  # type: ignore
+            d=f"M{x0},{y0}H{x1}V{y1}H{x0}z",
+            fill=self.fill_color,
+        )
+
+        if top_left_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{yh}A{corner_r},{corner_r},0,0,1{x1},{y0}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if top_right_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{xh}A{corner_r},{corner_r},0,0,1{x1},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_left_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{y1}H{xh}A{corner_r},{corner_r},0,0,1,{x0},{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_right_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{yh}A{corner_r},{corner_r},0,0,1,{xh},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if top_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{yh}A{h},{h},0,0,1,{x1},{yh}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{yh}A{h},{h},0,0,1,{x0},{yh}Z",
+                fill=self.fill_color,
+            )
+
+        if left_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{xh},{y0}H{x1}V{y1}H{xh}A{h},{h},0,0,1,{xh},{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if right_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{xh}A{h},{h},0,0,1,{xh},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if alone:
+            el = ET.Element(
+                ET.QName("rect"),
+                x=str(x0),
+                y=str(y0),
+                width=self.unit_size,
+                height=self.unit_size,
+                rx="5",
+                ry="5",
+                fill=self.fill_color,
+            )
+
+        self.img._img.append(el)
+
+    def initialize(self, *args, **kwargs) -> None:
+        super().initialize(*args, **kwargs)
+        self.unit_size = f"{self.img.units(self.box_size, text=False)}"
+
+    def el(self, box):
+        pass
+
+
+class SvgRounded2InvertedDrawer(SvgQRModuleDrawer):
+    needs_neighbors = True
+
+    def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
+
+        if not is_active:
+            return
+
+        coords = self.coords(box)
+
+        h = self.img.units(self.box_half, text=False) - self.box_delta
+
+        x0 = self.img.units(coords.x0, text=False)
+        y0 = self.img.units(coords.y0, text=False)
+        x1 = self.img.units(coords.x1, text=False)
+        y1 = self.img.units(coords.y1, text=False)
+
+        left_block = not is_active.W and is_active.E and not is_active.N and not is_active.S
+        right_block = not is_active.E and is_active.W and not is_active.N and not is_active.S
+        top_block = not is_active.N and is_active.S and not is_active.E and not is_active.W
+        bottom_block = not is_active.S and is_active.N and not is_active.E and not is_active.W
+
+        alone = not is_active.N and not is_active.S and not is_active.E and not is_active.W
+
+        el = ET.Element(
+            ET.QName("path"),  # type: ignore
+            d=f"M{x0},{y0}H{x1}V{y1}H{x0}z",
+            fill=self.fill_color,
+        )
+
+        if top_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}A{h},{h},0,0,0,{x1},{y0}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{y1}A{h},{h},0,0,0,{x0},{y1}Z",
+                fill=self.fill_color,
+            )
+
+        if left_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{y1}H{x0}A{h},{h},0,0,0,{x0},{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if right_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}A{h},{h},0,0,0,{x1},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if alone:
+            el = ET.Element(
+                ET.QName("rect"),
+                x=str(x0),
+                y=str(y0),
+                width=self.unit_size,
+                height=self.unit_size,
+                fill=self.fill_color,
+            )
+
+        self.img._img.append(el)
+
+    def initialize(self, *args, **kwargs) -> None:
+        super().initialize(*args, **kwargs)
+        self.unit_size = f"{self.img.units(self.box_size, text=False)}"
+
+    def el(self, box):
+        pass
+
+
+class SvgRounded2Inverted2Drawer(SvgQRModuleDrawer):
+    needs_neighbors = True
+
+    def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
+
+        if not is_active:
+            return
+
+        coords = self.coords(box)
+
+        h = self.img.units(self.box_half, text=False) - self.box_delta
+
+        x0 = self.img.units(coords.x0, text=False)
+        y0 = self.img.units(coords.y0, text=False)
+        x1 = self.img.units(coords.x1, text=False)
+        y1 = self.img.units(coords.y1, text=False)
+        xh = self.img.units(coords.xh, text=False)
+        yh = self.img.units(coords.yh, text=False)
+
+        corner_r = self.img.units(self.box_size, text=False)
+
+        left_block = not is_active.W and is_active.E and not is_active.N and not is_active.S
+        right_block = not is_active.E and is_active.W and not is_active.N and not is_active.S
+        top_block = not is_active.N and is_active.S and not is_active.E and not is_active.W
+        bottom_block = not is_active.S and is_active.N and not is_active.E and not is_active.W
+
+        top_left_corner = not is_active.N and not is_active.W
+        top_right_corner = not is_active.N and not is_active.E
+        bottom_left_corner = not is_active.S and not is_active.W
+        bottom_right_corner = not is_active.S and not is_active.E
+
+        alone = not is_active.N and not is_active.S and not is_active.E and not is_active.W
+
+        el = ET.Element(
+            ET.QName("path"),  # type: ignore
+            d=f"M{x0},{y0}H{x1}V{y1}H{x0}z",
+            fill=self.fill_color,
+        )
+
+        if top_left_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{yh}A{corner_r},{corner_r},0,0,1{x1},{y0}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if top_right_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{xh}A{corner_r},{corner_r},0,0,1{x1},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_left_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{y1}H{xh}A{corner_r},{corner_r},0,0,1,{x0},{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_right_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{yh}A{corner_r},{corner_r},0,0,1,{xh},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if top_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}A{h},{h},0,0,0,{x1},{y0}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{y1}A{h},{h},0,0,0,{x0},{y1}Z",
+                fill=self.fill_color,
+            )
+
+        if left_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{y1}H{x0}A{h},{h},0,0,0,{x0},{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if right_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}A{h},{h},0,0,0,{x1},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if alone:
+            el = ET.Element(
+                ET.QName("rect"),  # type: ignore
+                x=str(x0),
+                y=str(y0),
+                width=self.unit_size,
+                height=self.unit_size,
+                rx="5",
+                ry="5",
+                fill=self.fill_color,
+            )
+
+        self.img._img.append(el)
+
+    def initialize(self, *args, **kwargs) -> None:
+        super().initialize(*args, **kwargs)
+        self.unit_size = f"{self.img.units(self.box_size, text=False)}"
+
+    def el(self, box):
+        pass
+
+
+class SvgSharped2InvertedDrawer(SvgQRModuleDrawer):
+    needs_neighbors = True
+
+    def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
+
+        if not is_active:
+            return
+
+        coords = self.coords(box)
+
+        x0 = self.img.units(coords.x0, text=False)
+        y0 = self.img.units(coords.y0, text=False)
+        x1 = self.img.units(coords.x1, text=False)
+        y1 = self.img.units(coords.y1, text=False)
+        xh = self.img.units(coords.xh, text=False)
+        yh = self.img.units(coords.yh, text=False)
+
+        left_block = not is_active.W and is_active.E and not is_active.N and not is_active.S
+        right_block = not is_active.E and is_active.W and not is_active.N and not is_active.S
+        top_block = not is_active.N and is_active.S and not is_active.E and not is_active.W
+        bottom_block = not is_active.S and is_active.N and not is_active.E and not is_active.W
+
+        alone = not is_active.N and not is_active.S and not is_active.E and not is_active.W
+
+        el = ET.Element(
+            ET.QName("path"),  # type: ignore
+            d=f"M{x0},{y0}H{x1}V{y1}H{x0}z",
+            fill=self.fill_color,
+        )
+
+        if top_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}L{xh},{yh}L{x1},{y0}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{y1}L{xh},{yh}L{x0},{y1}Z",
+                fill=self.fill_color,
+            )
+
+        if left_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{y1}H{x0}L{xh},{yh}L{x0},{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if right_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}L{xh},{yh}L{x1},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if alone:
+            el = ET.Element(
+                ET.QName("rect"),
+                x=str(x0),
+                y=str(y0),
+                width=self.unit_size,
+                height=self.unit_size,
+                fill=self.fill_color,
+            )
+
+        self.img._img.append(el)
+
+    def initialize(self, *args, **kwargs) -> None:
+        super().initialize(*args, **kwargs)
+        self.unit_size = f"{self.img.units(self.box_size, text=False)}"
+
+    def el(self, box):
+        pass
+
+
+class SvgSharped2Inverted2Drawer(SvgQRModuleDrawer):
+    needs_neighbors = True
+
+    def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
+
+        if not is_active:
+            return
+
+        coords = self.coords(box)
+
+        h = self.img.units(self.box_half, text=False) - self.box_delta
+        corner_r = self.img.units(self.box_size, text=False)
+
+        x0 = self.img.units(coords.x0, text=False)
+        y0 = self.img.units(coords.y0, text=False)
+        x1 = self.img.units(coords.x1, text=False)
+        y1 = self.img.units(coords.y1, text=False)
+        xh = self.img.units(coords.xh, text=False)
+        yh = self.img.units(coords.yh, text=False)
+
+        left_block = not is_active.W and is_active.E and not is_active.N and not is_active.S
+        right_block = not is_active.E and is_active.W and not is_active.N and not is_active.S
+        top_block = not is_active.N and is_active.S and not is_active.E and not is_active.W
+        bottom_block = not is_active.S and is_active.N and not is_active.E and not is_active.W
+
+        alone = not is_active.N and not is_active.S and not is_active.E and not is_active.W
+
+        top_left_corner = not is_active.N and not is_active.W
+        top_right_corner = not is_active.N and not is_active.E
+        bottom_left_corner = not is_active.S and not is_active.W
+        bottom_right_corner = not is_active.S and not is_active.E
+
+        el = ET.Element(
+            ET.QName("path"),  # type: ignore
+            d=f"M{x0},{y0}H{x1}V{y1}H{x0}z",
+            fill=self.fill_color,
+        )
+
+        if top_left_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{yh}A{corner_r},{corner_r},0,0,1{x1},{y0}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if top_right_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{xh}A{corner_r},{corner_r},0,0,1{x1},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_left_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{y1}H{xh}A{corner_r},{corner_r},0,0,1,{x0},{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_right_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{yh}A{corner_r},{corner_r},0,0,1,{xh},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if top_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}L{xh},{yh}L{x1},{y0}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{y1}L{xh},{yh}L{x0},{y1}Z",
+                fill=self.fill_color,
+            )
+
+        if left_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{y1}H{x0}L{xh},{yh}L{x0},{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if right_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}L{xh},{yh}L{x1},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if alone:
+            el = ET.Element(
+                ET.QName("rect"),
+                x=str(x0),
+                y=str(y0),
+                width=self.unit_size,
+                height=self.unit_size,
+                rx="5",
+                ry="5",
+                fill=self.fill_color,
+            )
+
+        self.img._img.append(el)
+
+    def initialize(self, *args, **kwargs) -> None:
+        super().initialize(*args, **kwargs)
+        self.unit_size = f"{self.img.units(self.box_size, text=False)}"
+
+    def el(self, box):
+        pass
+
+
+class SvgSomeHeartDrawer(SvgQRModuleDrawer):
+    needs_neighbors = True
+
+    def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
+
+        if not is_active:
+            return
+
+        coords = self.coords(box)
+
+        h = self.img.units(self.box_half, text=False) - self.box_delta
+
+        radius = self.img.units(self.box_half, text=False)
+
+        x0 = self.img.units(coords.x0, text=False)
+        xh = self.img.units(coords.xh, text=False)
+        y0 = self.img.units(coords.y0, text=False)
+        y1 = self.img.units(coords.y1, text=False)
+        yh = self.img.units(coords.yh, text=False)
+        x1 = self.img.units(coords.x1, text=False)
+
+        left_block = not is_active.W and is_active.E and not is_active.N and not is_active.S
+        right_block = not is_active.E and is_active.W and not is_active.N and not is_active.S
+        top_block = not is_active.N and is_active.S and not is_active.E and not is_active.W
+        bottom_block = not is_active.S and is_active.N and not is_active.E and not is_active.W
+
+        alone = not is_active.N and not is_active.S and not is_active.E and not is_active.W
+
+        el = ET.Element(
+            ET.QName("path"),  # type: ignore
+            d=f"M{x0},{y0}H{x1}V{y1}H{x0}z",
+            fill=self.fill_color,
+        )
+
+        if top_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{yh}A{h},{h},0,0,1,{x1},{yh}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{yh}A{h},{h},0,0,1,{x0},{yh}Z",
+                fill=self.fill_color,
+            )
+
+        if left_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{xh},{y0}H{x1}V{y1}H{xh}A{h},{h},0,0,1,{xh},{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if right_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{xh}A{h},{h},0,0,1,{xh},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if alone:
+            el = ET.Element(
+                ET.QName("circle"),  # type: ignore
+                cx=str(xh),
+                cy=str(yh),
+                r=str(radius),
+                fill=self.fill_color,
+            )
+
+        self.img._img.append(el)
+
+    def initialize(self, *args, **kwargs) -> None:
+        super().initialize(*args, **kwargs)
+        self.unit_size = f"{self.img.units(self.box_size, text=False)}"
+
+    def el(self, box):
+        pass
+
+
+class SvgSharpedDrawer(SvgQRModuleDrawer):
+    needs_neighbors = True
+
+    def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
+
+        coords = self.coords(box)
+
+        x0 = self.img.units(coords.x0, text=False)
+        y0 = self.img.units(coords.y0, text=False)
+        y1 = self.img.units(coords.y1, text=False)
+        x1 = self.img.units(coords.x1, text=False)
+        xh = self.img.units(coords.xh, text=False)
+        yh = self.img.units(coords.yh, text=False)
+
+        if not is_active:
+            return
+
+        left_block = not is_active.W and is_active.E and not is_active.N and not is_active.S
+        right_block = not is_active.E and is_active.W and not is_active.N and not is_active.S
+        top_block = not is_active.N and is_active.S and not is_active.E and not is_active.W
+        bottom_block = not is_active.S and is_active.N and not is_active.E and not is_active.W
+
+        el = ET.Element(
+            ET.QName("path"),  # type: ignore
+            d=f"M{x0},{y0}H{x1}V{y1}H{x0}z",
+            fill=self.fill_color,
+        )
+
+        if top_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{yh}L{x1},{y0}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{yh}L{x0},{y1}Z",
+                fill=self.fill_color,
+            )
+
+        if left_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{y1}H{xh}L{xh}{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if right_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{xh}L{x1},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        self.img._img.append(el)
+
+    def initialize(self, *args, **kwargs) -> None:
+        super().initialize(*args, **kwargs)
+        self.unit_size = f"{self.img.units(self.box_size, text=False)}"
+
+    def el(self, box):
+        pass
+
+
+class SvgSharpedRoundedDrawer(SvgQRModuleDrawer):
+    needs_neighbors = True
+
+    def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
+
+        if not is_active:
+            return
+
+        coords = self.coords(box)
+
+        x0 = self.img.units(coords.x0, text=False)
+        y0 = self.img.units(coords.y0, text=False)
+        y1 = self.img.units(coords.y1, text=False)
+        x1 = self.img.units(coords.x1, text=False)
+        xh = self.img.units(coords.xh, text=False)
+        yh = self.img.units(coords.yh, text=False)
+
+        corner_r = self.img.units(self.box_size, text=False)
+
+        left_block = not is_active.W and is_active.E and not is_active.N and not is_active.S
+        right_block = not is_active.E and is_active.W and not is_active.N and not is_active.S
+        top_block = not is_active.N and is_active.S and not is_active.E and not is_active.W
+        bottom_block = not is_active.S and is_active.N and not is_active.E and not is_active.W
+
+        top_left_corner = not is_active.N and not is_active.W
+        top_right_corner = not is_active.N and not is_active.E
+        bottom_left_corner = not is_active.S and not is_active.W
+        bottom_right_corner = not is_active.S and not is_active.E
+
+        alone = not is_active.N and not is_active.S and not is_active.E and not is_active.W
+
+        el = ET.Element(
+            ET.QName("path"),  # type: ignore
+            d=f"M{x0},{y0}H{x1}V{y1}H{x0}z",
+            fill=self.fill_color,
+        )
+
+        if top_left_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{yh}A{corner_r},{corner_r},0,0,1{x1},{y0}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if top_right_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{xh}A{corner_r},{corner_r},0,0,1{x1},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_left_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{y1}H{x1}A{corner_r},{corner_r},0,0,1,{x0},{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_right_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{yh}A{corner_r},{corner_r},0,0,1,{xh},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if top_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{yh}L{x1},{y0}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{yh}L{x0},{y1}Z",
+                fill=self.fill_color,
+            )
+
+        if left_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{y1}H{xh}L{x0},{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if right_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{xh}L{x1},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if alone:
+            el = ET.Element(
+                ET.QName("rect"),
+                x=str(x0),
+                y=str(y0),
+                width=self.unit_size,
+                height=self.unit_size,
+                rx="5",
+                ry="5",
+                fill=self.fill_color,
+            )
+        self.img._img.append(el)
+
+    def initialize(self, *args, **kwargs) -> None:
+        super().initialize(*args, **kwargs)
+        self.unit_size = f"{self.img.units(self.box_size, text=False)}"
+
+    def el(self, box):
+        pass
+
+
+class SvgSharpedRounded2Drawer(SvgQRModuleDrawer):
+    needs_neighbors = True
+
+    def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
+
+        if not is_active:
+            return
+
+        coords = self.coords(box)
+
+        h = self.img.units(self.box_half, text=False) - self.box_delta
+
+        x0 = self.img.units(coords.x0, text=False)
+        y0 = self.img.units(coords.y0, text=False)
+        y1 = self.img.units(coords.y1, text=False)
+        x1 = self.img.units(coords.x1, text=False)
+        xr0 = self.img.units(coords.x0, text=False)
+        xh = self.img.units(coords.xh, text=False)
+        yh = self.img.units(coords.yh, text=False)
+
+        corner_r = self.img.units(self.box_size, text=False)
+
+        left_block = not is_active.W and is_active.E and not is_active.N and not is_active.S
+        right_block = not is_active.E and is_active.W and not is_active.N and not is_active.S
+        top_block = not is_active.N and is_active.S and not is_active.E and not is_active.W
+        bottom_block = not is_active.S and is_active.N and not is_active.E and not is_active.W
+
+        top_left_corner = not is_active.N and not is_active.W
+        top_right_corner = not is_active.N and not is_active.E
+        bottom_left_corner = not is_active.S and not is_active.W
+        bottom_right_corner = not is_active.S and not is_active.E
+
+        alone = not is_active.N and not is_active.S and not is_active.E and not is_active.W
+
+        el = ET.Element(
+            ET.QName("path"),  # type: ignore
+            d=f"M{x0},{y0}H{x1}V{y1}H{x0}z",
+            fill=self.fill_color,
+        )
+
+        if top_left_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{yh}A{corner_r},{corner_r},0,0,1{x1},{y0}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if top_right_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{xh}A{corner_r},{corner_r},0,0,1{x1},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_left_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{y1}H{xh}A{corner_r},{corner_r},0,0,1,{xr0},{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_right_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{yh}A{corner_r},{corner_r},0,0,1,{xh},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if top_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x1},{y1}H{x0}C{x0},{y0},{xh},{yh},{x0},{y0}C{x0},{y0},{x1},{y0},{x1},{y1}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}C{x1},{y1},{xh},{yh},{x1},{y1}C{x1},{y1},{x0},{y1},{x0},{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if left_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x1},{y0}V{y1}C{x0},{y1},{xh},{yh},{x0},{y1}C{x0},{y1},{x0},{y0},{x1},{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if right_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y1}V{y0}C{x0},{y0},{xh},{yh},{x1},{y0}C{x1},{y0},{x1},{y1},{x0},{y1}Z",
+                fill=self.fill_color,
+            )
+
+        if alone:
+            el = ET.Element(
+                ET.QName("circle"),  # type: ignore
+                cx=str(xh),
+                cy=str(yh),
+                r=str(h),
+                fill=self.fill_color,
+            )
+        self.img._img.append(el)
+
+    def initialize(self, *args, **kwargs) -> None:
+        super().initialize(*args, **kwargs)
+        self.unit_size = f"{self.img.units(self.box_size, text=False)}"
+
+    def el(self, box):
+        pass
+
+
+class SvgSharped2Drawer(SvgQRModuleDrawer):
+    needs_neighbors = True
+
+    def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
+
+        coords = self.coords(box)
+
+        x0 = self.img.units(coords.x0, text=False)
+        y0 = self.img.units(coords.y0, text=False)
+        y1 = self.img.units(coords.y1, text=False)
+        x1 = self.img.units(coords.x1, text=False)
+        xh = self.img.units(coords.xh, text=False)
+        yh = self.img.units(coords.yh, text=False)
+
+        if not is_active:
+            return
+
+        left_block = not is_active.W and is_active.E and not is_active.N and not is_active.S
+        right_block = not is_active.E and is_active.W and not is_active.N and not is_active.S
+        top_block = not is_active.N and is_active.S and not is_active.E and not is_active.W
+        bottom_block = not is_active.S and is_active.N and not is_active.E and not is_active.W
+
+        el = ET.Element(
+            ET.QName("path"),  # type: ignore
+            d=f"M{x0},{y0}H{x1}V{y1}H{x0}z",
+            fill=self.fill_color,
+        )
+
+        if top_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{yh}L{xh},{y0}L{x1},{yh}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{yh}L{xh},{y1}L{x0},{yh}V{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if left_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{xh},{y0}H{x1}V{y1}H{xh}L{x0},{yh}L{xh},{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if right_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{xh}L{x1},{yh}L{xh},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        self.img._img.append(el)
+
+    def initialize(self, *args, **kwargs) -> None:
+        super().initialize(*args, **kwargs)
+        self.unit_size = f"{self.img.units(self.box_size, text=False)}"
+
+    def el(self, box):
+        pass
+
+
+class SvgSharped2DiamondDrawer(SvgQRModuleDrawer):
+    needs_neighbors = True
+
+    def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
+
+        if not is_active:
+            return
+
+        coords = self.coords(box)
+
+        x0 = self.img.units(coords.x0, text=False)
+        y0 = self.img.units(coords.y0, text=False)
+        y1 = self.img.units(coords.y1, text=False)
+        x1 = self.img.units(coords.x1, text=False)
+        yh = self.img.units(coords.yh, text=False)
+        xh = self.img.units(coords.xh, text=False)
+
+        left_block = not is_active.W and is_active.E and not is_active.N and not is_active.S
+        right_block = not is_active.E and is_active.W and not is_active.N and not is_active.S
+        top_block = not is_active.N and is_active.S and not is_active.E and not is_active.W
+        bottom_block = not is_active.S and is_active.N and not is_active.E and not is_active.W
+
+        top_left_corner = not is_active.N and not is_active.W
+        top_right_corner = not is_active.N and not is_active.E
+        below_left_corner = not is_active.S and not is_active.W
+        below_right_corner = not is_active.S and not is_active.E
+
+        alone = not is_active.N and not is_active.S and not is_active.E and not is_active.W
+
+        el = ET.Element(
+            ET.QName("path"),  # type: ignore
+            d=f"M{x0},{y0}H{x1}V{y1}H{x0}z",
+            fill=self.fill_color,
+        )
+
+        if top_left_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{yh}L{xh},{y0}H{x1}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if top_right_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{xh}L{x1},{yh}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if below_left_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{xh},{y0}H{x1}V{y1}H{xh}L{x0},{yh}V{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if below_right_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{yh}L{xh},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if top_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{yh}L{xh},{y0}L{x1},{yh}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{yh}L{xh},{y1}L{x0},{yh}V{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if left_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{xh},{y0}H{x1}V{y1}H{xh}L{x0},{yh}L{xh},{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if right_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{xh}L{x1},{yh}L{xh},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if alone:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{yh}L{xh},{y0}L{x1},{yh}L{xh},{y1}Z",
+                fill=self.fill_color,
+            )
+        self.img._img.append(el)
+
+    def initialize(self, *args, **kwargs) -> None:
+        super().initialize(*args, **kwargs)
+        self.unit_size = f"{self.img.units(self.box_size, text=False)}"
+
+    def el(self, box):
+        pass
+
+
+class SvgSharped2RoundedDrawer(SvgQRModuleDrawer):
+    needs_neighbors = True
+
+    def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
+
+        if not is_active:
+            return
+
+        coords = self.coords(box)
+
+        x0 = self.img.units(coords.x0, text=False)
+        y0 = self.img.units(coords.y0, text=False)
+        y1 = self.img.units(coords.y1, text=False)
+        x1 = self.img.units(coords.x1, text=False)
+        yh = self.img.units(coords.yh, text=False)
+        xh = self.img.units(coords.xh, text=False)
+
+        corner_r = self.img.units(self.box_size, text=False)
+
+        left_block = not is_active.W and is_active.E and not is_active.N and not is_active.S
+        right_block = not is_active.E and is_active.W and not is_active.N and not is_active.S
+        top_block = not is_active.N and is_active.S and not is_active.E and not is_active.W
+        bottom_block = not is_active.S and is_active.N and not is_active.E and not is_active.W
+
+        top_left_corner = not is_active.N and not is_active.W
+        top_right_corner = not is_active.N and not is_active.E
+        bottom_left_corner = not is_active.S and not is_active.W
+        bottom_right_corner = not is_active.S and not is_active.E
+
+        alone = not is_active.N and not is_active.S and not is_active.E and not is_active.W
+
+        el = ET.Element(
+            ET.QName("path"),  # type: ignore
+            d=f"M{x0},{y0}H{x1}V{y1}H{x0}z",
+            fill=self.fill_color,
+        )
+
+        if top_left_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{yh}A{corner_r},{corner_r},0,0,1{x1},{y0}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if top_right_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{xh}A{corner_r},{corner_r},0,0,1{x1},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_left_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{y1}H{xh}A{corner_r},{corner_r},0,0,1,{x0},{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_right_corner:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{yh}A{corner_r},{corner_r},0,0,1,{xh},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if top_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{yh}L{xh},{y0}L{x1},{yh}V{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if bottom_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{x1}V{yh}L{xh},{y1}L{x0},{yh}V{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if left_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{xh},{y0}H{x1}V{y1}H{xh}L{x0},{yh}L{xh},{y0}Z",
+                fill=self.fill_color,
+            )
+
+        if right_block:
+            el = ET.Element(
+                ET.QName("path"),  # type: ignore
+                d=f"M{x0},{y0}H{xh}L{x1},{yh}L{xh},{y1}H{x0}Z",
+                fill=self.fill_color,
+            )
+
+        if alone:
+            el = ET.Element(
+                ET.QName("rect"),
+                x=str(x0),
+                y=str(y0),
+                width=self.unit_size,
+                height=self.unit_size,
+                rx="5",
+                ry="5",
+                fill=self.fill_color,
+            )
+
+        self.img._img.append(el)
+
+    def initialize(self, *args, **kwargs) -> None:
+        super().initialize(*args, **kwargs)
+        self.unit_size = f"{self.img.units(self.box_size, text=False)}"
+
+    def el(self, box):
+        pass
