@@ -2,11 +2,12 @@ import decimal
 from decimal import Decimal
 from typing import List, Optional, Type, Union, overload
 
+from typing_extensions import Literal
+
 import qrcode.image.base
 from qrcode.compat.etree import ET
 from qrcode.image.styles.moduledrawers import svg as svg_drawers
 from qrcode.image.styles.moduledrawers.base import QRModuleDrawer
-from typing_extensions import Literal
 
 
 class SvgFragmentImage(qrcode.image.base.BaseImageWithDrawer):
@@ -92,20 +93,36 @@ class SvgImage(SvgFragmentImage):
         "gapped-square": (svg_drawers.SvgSquareDrawer, {"size_ratio": Decimal(0.8)}),
     }
 
+    def hex8_to_svg_fill(self, hex8_color):
+        if len(hex8_color) == 7 and hex8_color[0] == "#":
+            return hex8_color, 1
+
+        if len(hex8_color) != 9 or hex8_color[0] != "#":
+            raise ValueError("Invalid hex8 color")
+
+        fill = hex8_color[:7]
+        alpha = int(hex8_color[7:], 16) / 255
+
+        return fill, alpha
+
     def _svg(self, tag="svg", **kwargs):
         svg = super()._svg(tag=tag, **kwargs)
         svg.set("xmlns", self._SVG_namespace)
+
         if self.background:
-            svg.append(
-                ET.Element(
-                    "rect",
-                    fill=self.background,
-                    x="0",
-                    y="0",
-                    width="100%",
-                    height="100%",
-                )
+            fill, alpha = self.hex8_to_svg_fill(self.background)
+            bg = ET.Element(
+                "rect",
+                id="qr-background",
+                x="0",
+                y="0",
+                width="100%",
+                height="100%",
             )
+
+            bg.set("fill", fill)
+            bg.set("fill-opacity", str(alpha))
+            svg.append(bg)
         return svg
 
     def _write(self, stream):

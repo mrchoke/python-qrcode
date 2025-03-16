@@ -143,7 +143,6 @@ class SvgCircleDrawer(SvgQRModuleDrawer):
         self.radius = f"{self.img.units(self.box_half, text=False)}"
 
     def el(self, box):
-
         coords = self.coords(box)
         return ET.Element(
             self.tag_qname,  # type: ignore
@@ -198,16 +197,16 @@ class SvgPathCircleDrawer(SvgPathQRModuleDrawer):
         return f"M{x0},{yh}A{h},{h} 0 0 0 {x1},{yh}A{h},{h} 0 0 0 {x0},{yh}z"
 
 
-class SveBlankDrawer(SvgQRModuleDrawer):
+class SvgBlankDrawer(SvgQRModuleDrawer):
     def initialize(self, *args, **kwargs) -> None:
         super().initialize(*args, **kwargs)
         self.unit_size = self.img.units(self.box_size)
 
-    def drawrect(self, box, is_active: TYPE_CHECKING):
+    def drawrect(self, box, is_active: bool):
         return
 
     def el(self, box) -> str:
-        return
+        return ""
 
 
 class SvgDiamonDrawer(SvgQRModuleDrawer):
@@ -224,7 +223,7 @@ class SvgDiamonDrawer(SvgQRModuleDrawer):
         y1 = self.img.units(coords.y1, text=False)
         x1 = self.img.units(coords.x1, text=False)
 
-        path = ET.Element(
+        path: str = ET.Element(
             ET.QName("path"),  # type: ignore
             d=f"M{x0},{yh}L{xh},{y0}L{x1},{yh}L{xh},{y1}Z",
             fill=self.fill_color,
@@ -265,10 +264,9 @@ class SvgRandomSquareDrawer(SvgQRModuleDrawer):
 class SvgVerticalBarsDrawer(SvgQRModuleDrawer):
     needs_neighbors = True
 
-    def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
-
-        if not is_active:
-            return
+    def drawrect(self, box: List[List[int]], is_active: ActiveWithNeighbors):
+        if not (is_active.N or is_active.S or is_active.E or is_active.W):
+            return None
 
         coords = self.coords(box)
 
@@ -292,14 +290,14 @@ class SvgVerticalBarsDrawer(SvgQRModuleDrawer):
 
         el = ET.Element(
             ET.QName("path"),  # type: ignore
-            d=f"M{x0},{y0}H{x1}V{y1+h}H{x0}z",
+            d=f"M{x0},{y0}H{x1}V{y1 + h}H{x0}z",
             fill=self.fill_color,
         )
 
         if top_block:
             el = ET.Element(
                 ET.QName("path"),  # type: ignore
-                d=f"M{x0},{yh}A{h},{h},0,0,1,{x1},{yh}V{y1+h}H{x0}Z",
+                d=f"M{x0},{yh}A{h},{h},0,0,1,{x1},{yh}V{y1 + h}H{x0}Z",
                 fill=self.fill_color,
             )
 
@@ -332,7 +330,6 @@ class SvgVertical2BarsDrawer(SvgQRModuleDrawer):
     needs_neighbors = True
 
     def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
-
         if not is_active:
             return
 
@@ -353,7 +350,7 @@ class SvgVertical2BarsDrawer(SvgQRModuleDrawer):
 
         el = ET.Element(
             ET.QName("path"),  # type: ignore
-            d=f"M{x0},{y0}H{x1}V{y1+h}H{x0}z",
+            d=f"M{x0},{y0}H{x1}V{y1 + h}H{x0}z",
             fill=self.fill_color,
         )
 
@@ -385,7 +382,6 @@ class SvgHorizontalBarsDrawer(SvgQRModuleDrawer):
     needs_neighbors = True
 
     def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
-
         if not is_active:
             return
 
@@ -411,14 +407,14 @@ class SvgHorizontalBarsDrawer(SvgQRModuleDrawer):
 
         el = ET.Element(
             ET.QName("path"),  # type: ignore
-            d=f"M{x0},{y0}H{x1+h}V{y1}H{x0}z",
+            d=f"M{x0},{y0}H{x1 + h}V{y1}H{x0}z",
             fill=self.fill_color,
         )
 
         if left_block:
             el = ET.Element(
                 ET.QName("path"),  # type: ignore
-                d=f"M{xh},{y0}H{x1+h}V{y1}H{x0}A{h},{h},0,0,1,{xh},{y0}Z",
+                d=f"M{xh},{y0}H{x1 + h}V{y1}H{x0}A{h},{h},0,0,1,{xh},{y0}Z",
                 fill=self.fill_color,
             )
 
@@ -451,7 +447,6 @@ class SvgHorizontal2BarsDrawer(SvgQRModuleDrawer):
     needs_neighbors = True
 
     def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
-
         if not is_active:
             return
 
@@ -472,7 +467,7 @@ class SvgHorizontal2BarsDrawer(SvgQRModuleDrawer):
 
         el = ET.Element(
             ET.QName("path"),  # type: ignore
-            d=f"M{x0},{y0}H{x1+h}V{y1}H{x0}z",
+            d=f"M{x0},{y0}H{x1 + h}V{y1}H{x0}z",
             fill=self.fill_color,
         )
 
@@ -504,7 +499,6 @@ class SvgRoundedDrawer(SvgQRModuleDrawer):
     needs_neighbors = True
 
     def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
-
         if not is_active:
             return
 
@@ -620,7 +614,6 @@ class SvgRounded2Drawer(SvgQRModuleDrawer):
     needs_neighbors = True
 
     def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
-
         if not is_active:
             return
 
@@ -737,7 +730,6 @@ class SvgRounded2InvertedDrawer(SvgQRModuleDrawer):
     needs_neighbors = True
 
     def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
-
         if not is_active:
             return
 
@@ -815,7 +807,6 @@ class SvgRounded2Inverted2Drawer(SvgQRModuleDrawer):
     needs_neighbors = True
 
     def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
-
         if not is_active:
             return
 
@@ -932,7 +923,6 @@ class SvgSharped2InvertedDrawer(SvgQRModuleDrawer):
     needs_neighbors = True
 
     def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
-
         if not is_active:
             return
 
@@ -1010,7 +1000,6 @@ class SvgSharped2Inverted2Drawer(SvgQRModuleDrawer):
     needs_neighbors = True
 
     def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
-
         if not is_active:
             return
 
@@ -1126,7 +1115,6 @@ class SvgSomeHeartDrawer(SvgQRModuleDrawer):
     needs_neighbors = True
 
     def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
-
         if not is_active:
             return
 
@@ -1207,7 +1195,6 @@ class SvgSharpedDrawer(SvgQRModuleDrawer):
     needs_neighbors = True
 
     def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
-
         coords = self.coords(box)
 
         x0 = self.img.units(coords.x0, text=False)
@@ -1273,7 +1260,6 @@ class SvgSharpedRoundedDrawer(SvgQRModuleDrawer):
     needs_neighbors = True
 
     def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
-
         if not is_active:
             return
 
@@ -1387,7 +1373,6 @@ class SvgSharpedRounded2Drawer(SvgQRModuleDrawer):
     needs_neighbors = True
 
     def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
-
         if not is_active:
             return
 
@@ -1501,7 +1486,6 @@ class SvgSharped2Drawer(SvgQRModuleDrawer):
     needs_neighbors = True
 
     def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
-
         coords = self.coords(box)
 
         x0 = self.img.units(coords.x0, text=False)
@@ -1567,7 +1551,6 @@ class SvgSharped2DiamondDrawer(SvgQRModuleDrawer):
     needs_neighbors = True
 
     def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
-
         if not is_active:
             return
 
@@ -1674,7 +1657,6 @@ class SvgSharped2RoundedDrawer(SvgQRModuleDrawer):
     needs_neighbors = True
 
     def drawrect(self, box: List[List[int]], is_active: "ActiveWithNeighbors"):
-
         if not is_active:
             return
 
