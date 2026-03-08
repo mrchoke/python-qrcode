@@ -265,8 +265,8 @@ class SvgVerticalBarsDrawer(SvgQRModuleDrawer):
     needs_neighbors = True
 
     def drawrect(self, box: List[List[int]], is_active: ActiveWithNeighbors):
-        if not (is_active.N or is_active.S or is_active.E or is_active.W):
-            return None
+        if not is_active:
+            return
 
         coords = self.coords(box)
 
@@ -288,6 +288,7 @@ class SvgVerticalBarsDrawer(SvgQRModuleDrawer):
             not is_active.N and not is_active.S
         )
 
+        # Middle segment: extends downward by h to bridge gap to next module
         el = ET.Element(
             ET.QName("path"),  # type: ignore
             d=f"M{x0},{y0}H{x1}V{y1 + h}H{x0}z",
@@ -295,6 +296,7 @@ class SvgVerticalBarsDrawer(SvgQRModuleDrawer):
         )
 
         if top_block:
+            # Start of run: semicircle cap at top (arcs upward), extends down
             el = ET.Element(
                 ET.QName("path"),  # type: ignore
                 d=f"M{x0},{yh}A{h},{h},0,0,1,{x1},{yh}V{y1 + h}H{x0}Z",
@@ -302,11 +304,13 @@ class SvgVerticalBarsDrawer(SvgQRModuleDrawer):
             )
 
         if bottom_block:
+            # End of run: flat top, rounded bottom cap
             el = ET.Element(
                 ET.QName("path"),  # type: ignore
                 d=f"M{x0},{y0}H{x1}V{yh}A{h},{h},0,0,1,{x0},{yh}Z",
                 fill=self.fill_color,
             )
+
         if alone:
             el = ET.Element(
                 ET.QName("circle"),  # type: ignore

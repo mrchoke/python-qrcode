@@ -36,18 +36,14 @@ def _check_box_size(size):
 
 def _check_border(size):
     if int(size) < 0:
-        raise ValueError(
-            "Invalid border value (was %s, expected 0 or larger than that)" % size
-        )
+        raise ValueError("Invalid border value (was %s, expected 0 or larger than that)" % size)
 
 
 def _check_mask_pattern(mask_pattern):
     if mask_pattern is None:
         return
     if not isinstance(mask_pattern, int):
-        raise TypeError(
-            f"Invalid mask pattern (was {type(mask_pattern)}, expected int)"
-        )
+        raise TypeError(f"Invalid mask pattern (was {type(mask_pattern)}, expected int)")
     if mask_pattern < 0 or mask_pattern > 7:
         raise ValueError(f"Mask pattern should be in range(8) (got {mask_pattern})")
 
@@ -169,9 +165,7 @@ class QRCode(Generic[GenericImage]):
         if self.version in precomputed_qr_blanks:
             self.modules = copy_2d_array(precomputed_qr_blanks[self.version])
         else:
-            self.modules = [
-                [None] * self.modules_count for i in range(self.modules_count)
-            ]
+            self.modules = [[None] * self.modules_count for i in range(self.modules_count)]
             self.setup_position_probe_pattern(0, 0)
             self.setup_position_probe_pattern(self.modules_count - 7, 0)
             self.setup_position_probe_pattern(0, self.modules_count - 7)
@@ -186,19 +180,15 @@ class QRCode(Generic[GenericImage]):
             self.setup_type_number(test)
 
         if self.data_cache is None:
-            self.data_cache = util.create_data(
-                self.version, self.error_correction, self.data_list
-            )
+            self.data_cache = util.create_data(self.version, self.error_correction, self.data_list)
         self.map_data(self.data_cache, mask_pattern)
 
     def setup_position_probe_pattern(self, row, col):
         for r in range(-1, 8):
-
             if row + r <= -1 or self.modules_count <= row + r:
                 continue
 
             for c in range(-1, 8):
-
                 if col + c <= -1 or self.modules_count <= col + c:
                     continue
 
@@ -229,9 +219,7 @@ class QRCode(Generic[GenericImage]):
             data.write(buffer)
 
         needed_bits = len(buffer)
-        self.version = bisect_left(
-            util.BIT_LIMIT_TABLE[self.error_correction], needed_bits, start
-        )
+        self.version = bisect_left(util.BIT_LIMIT_TABLE[self.error_correction], needed_bits, start)
         if self.version == 41:
             raise exceptions.DataOverflowError()
 
@@ -333,20 +321,47 @@ class QRCode(Generic[GenericImage]):
         out.flush()
 
     @overload
-    def make_image(self, image_factory: Literal[None] = None, **kwargs) -> GenericImage:
-        ...
+    def make_image(self, image_factory: Literal[None] = None, **kwargs) -> GenericImage: ...
 
     @overload
     def make_image(
         self, image_factory: Type[GenericImageLocal] = None, **kwargs
-    ) -> GenericImageLocal:
-        ...
+    ) -> GenericImageLocal: ...
 
-    def make_image(self, image_factory=None, **kwargs):
+    def make_image(
+        self,
+        image_factory=None,
+        enable_masking=False,
+        logo_width_modules=0,
+        logo_height_modules=0,
+        logo_margin_modules=0,
+        mask_shape="rect",
+        mask_center_row=None,
+        mask_center_col=None,
+        skip_timing=False,
+        skip_alignment=False,
+        **kwargs,
+    ):
         """
         Make an image from the QR Code data.
 
         If the data has not been compiled yet, make it first.
+
+        :param enable_masking: If True, skip drawing modules in the
+            area reserved for the logo.
+        :param logo_width_modules: Logo width in module units.
+        :param logo_height_modules: Logo height in module units.
+        :param logo_margin_modules: Extra module padding around the logo
+            exclusion zone.
+        :param mask_shape: "rect" for rectangular or "ellipse" for
+            elliptical exclusion zone.
+        :param mask_center_row: Row center for the mask zone (defaults
+            to modules_count // 2).
+        :param mask_center_col: Column center for the mask zone (defaults
+            to modules_count // 2).
+        :param skip_timing: If True, do not draw timing pattern modules.
+        :param skip_alignment: If True, do not draw alignment pattern
+            modules.
         """
         _check_box_size(self.box_size)
         if self.data_cache is None:
@@ -370,9 +385,59 @@ class QRCode(Generic[GenericImage]):
             **kwargs,
         )
 
+        # Pre-compute the exclusion zone for logo masking
+        mask_zone = None
+        if enable_masking and logo_width_modules > 0 and logo_height_modules > 0:
+            half_w = (logo_width_modules + logo_margin_modules * 2 + 1) // 2
+            half_h = (logo_height_modules + logo_margin_modules * 2 + 1) // 2
+            cr = mask_center_row if mask_center_row is not None else self.modules_count // 2
+            cc = mask_center_col if mask_center_col is not None else self.modules_count // 2
+            mask_zone = (mask_shape, cr, cc, half_h, half_w)
+
+        # Pre-compute alignment pattern cells for skip_alignment
+        alignment_cells = set()
+        if skip_alignment:
+            positions = util.pattern_position(self.version)
+            for pr in positions:
+                for pc in positions:
+                    # Skip centers that overlap with finder patterns
+                    if (
+                        (pr < 9 and pc < 9)
+                        or (pr < 9 and pc > self.modules_count - 9)
+                        or (pr > self.modules_count - 9 and pc < 9)
+                    ):
+                        continue
+                    for dr in range(-2, 3):
+                        for dc in range(-2, 3):
+                            alignment_cells.add((pr + dr, pc + dc))
+
         if im.needs_drawrect:
             for r in range(self.modules_count):
                 for c in range(self.modules_count):
+                    # Skip modules inside the logo exclusion zone
+                    if mask_zone is not None:
+                        shape, cr, cc, rh, rw = mask_zone
+                        should_mask = False
+                        if shape == "ellipse" and rw > 0 and rh > 0:
+                            dr = (r - cr) / rh
+                            dc = (c - cc) / rw
+                            should_mask = (dr * dr + dc * dc) <= 1.0
+                        elif shape == "rect":
+                            should_mask = cr - rh <= r <= cr + rh and cc - rw <= c <= cc + rw
+                        if should_mask and not im.is_eye(r, c):
+                            continue
+
+                    # Skip timing pattern modules
+                    if skip_timing and not im.is_eye(r, c):
+                        if (r == 6 and 8 <= c <= self.modules_count - 9) or (
+                            c == 6 and 8 <= r <= self.modules_count - 9
+                        ):
+                            continue
+
+                    # Skip alignment pattern modules
+                    if alignment_cells and (r, c) in alignment_cells:
+                        continue
+
                     if im.needs_context:
                         im.drawrect_context(r, c, qr=self)
                     elif self.modules[r][c]:
@@ -384,12 +449,7 @@ class QRCode(Generic[GenericImage]):
 
     # return true if and only if (row, col) is in the module
     def is_constrained(self, row: int, col: int) -> bool:
-        return (
-            row >= 0
-            and row < len(self.modules)
-            and col >= 0
-            and col < len(self.modules[row])
-        )
+        return row >= 0 and row < len(self.modules) and col >= 0 and col < len(self.modules[row])
 
     def setup_timing_pattern(self):
         for r in range(8, self.modules_count - 8):
@@ -406,27 +466,17 @@ class QRCode(Generic[GenericImage]):
         pos = util.pattern_position(self.version)
 
         for i in range(len(pos)):
-
             row = pos[i]
 
             for j in range(len(pos)):
-
                 col = pos[j]
 
                 if self.modules[row][col] is not None:
                     continue
 
                 for r in range(-2, 3):
-
                     for c in range(-2, 3):
-
-                        if (
-                            r == -2
-                            or r == 2
-                            or c == -2
-                            or c == 2
-                            or (r == 0 and c == 0)
-                        ):
+                        if r == -2 or r == 2 or c == -2 or c == 2 or (r == 0 and c == 0):
                             self.modules[row + r][col + c] = True
                         else:
                             self.modules[row + r][col + c] = False
@@ -448,7 +498,6 @@ class QRCode(Generic[GenericImage]):
 
         # vertical
         for i in range(15):
-
             mod = not test and ((bits >> i) & 1) == 1
 
             if i < 6:
@@ -460,7 +509,6 @@ class QRCode(Generic[GenericImage]):
 
         # horizontal
         for i in range(15):
-
             mod = not test and ((bits >> i) & 1) == 1
 
             if i < 8:
@@ -484,18 +532,14 @@ class QRCode(Generic[GenericImage]):
         data_len = len(data)
 
         for col in range(self.modules_count - 1, 0, -2):
-
             if col <= 6:
                 col -= 1
 
             col_range = (col, col - 1)
 
             while True:
-
                 for c in col_range:
-
                     if self.modules[row][c] is None:
-
                         dark = False
 
                         if byteIndex < data_len:
